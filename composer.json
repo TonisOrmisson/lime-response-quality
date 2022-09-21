@@ -1,0 +1,33 @@
+{
+    "name": "tonisormisson/lime-response-quality",
+    "description": "A LimeSurvey Plugin to check the quality of the responses",
+    "keywords": ["limesurvey"],
+    "homepage": "https://github.com/TonisOrmisson/lime-response-quality",
+    "type": "limesurvey-plugin",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Tõnis Ormisson",
+            "email": "tonis@andmemasin.eu",
+            "homepage": "https://andmemasin.eu",
+            "role": "Developer"
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.0",
+        "ext-json": "*"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.0.x-dev"
+        }
+    },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://asset-packagist.org"
+        }
+    ]
+}

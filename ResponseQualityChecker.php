@@ -137,7 +137,7 @@ class ResponseQualityChecker extends PluginBase
 
     public function checkStraightLining(Question $question, SurveyDynamic $response) : QualityResult
     {
-        Yii::log('checkStraightLining:response:' . $response->id .";" , 'info', __METHOD__);
+        Yii::log('checkStraightLining:sid:'. $this->survey->primaryKey . ":response:" . $response->id .":" , 'info', __METHOD__);
         $subQuestions = $question->subquestions;
         $result = new QualityResult();
         if(count($subQuestions) == 0) {

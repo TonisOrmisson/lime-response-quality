@@ -22,7 +22,8 @@ class ResponseQualityChecker extends PluginBase
     private Survey $survey;
     private int $totalSubQuestions = 0;
     private array $questions = [];
-    private null|Question|bool $targetQuestion = null;
+    /** @var null|Question|bool */
+    private $targetQuestion = null;
 
     protected $settings = [
         'enabled' => [

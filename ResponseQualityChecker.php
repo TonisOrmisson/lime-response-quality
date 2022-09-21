@@ -250,7 +250,7 @@ class ResponseQualityChecker extends PluginBase
         if(empty($surveyId)) {
             return;
         }
-        Yii::log("Loading survey $surveyId", "info", __METHOD__);
+        //Yii::log("Loading survey $surveyId", "info", __METHOD__);
 
         /**
          * NB need to do it without find() since the code at hand is itself run
@@ -267,7 +267,7 @@ class ResponseQualityChecker extends PluginBase
             Yii::log("Got empty survey", "info", __METHOD__);
             return;
         }
-        Yii::log("Creating a survey from array", "info", __METHOD__);
+        //Yii::log("Creating a survey from array", "info", __METHOD__);
         $this->survey = (new Survey());
         $this->survey->attributes = $surveyArray;
 

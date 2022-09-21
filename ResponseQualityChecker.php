@@ -66,7 +66,7 @@ class ResponseQualityChecker extends PluginBase
             Yii::log('response not found' , 'info', __METHOD__);
             return;
         }
-        Yii::log('found response:' . json_encode($this->response->attributes), 'info', __METHOD__);
+        Yii::log('found response:' . $this->response->id, 'info', __METHOD__);
 
         $this->loadSurvey();
         if(!$this->enabled()) {

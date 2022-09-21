@@ -171,10 +171,10 @@ class ResponseQualityChecker extends PluginBase
         arsort($counts);
         $mostCheckedAnswer = current( $counts);
         $overlapPct = $mostCheckedAnswer / count($answers);
-        if($overlapPct > 0.5 or $mostCheckedAnswer > 5) {
-            $result->setQuality(1- $overlapPct);
-        } else {
+        if($overlapPct < 0.5 or $mostCheckedAnswer < 4) {
             $result->setQuality(1.0);
+        } else {
+            $result->setQuality(1- $overlapPct);
         }
         Yii::log("counts ". json_encode($counts)  , 'info', __METHOD__);
         Yii::log("most checked ". $mostCheckedAnswer  , 'info', __METHOD__);

@@ -50,9 +50,9 @@ class ResponseQualityChecker extends PluginBase
     public function init() {
         $this->subscribe('afterFindSurvey');
         $this->subscribe('beforeSurveySettings');
-        $this->subscribe('newSurveySettings');
         $this->subscribe('afterSurveyComplete');
         $this->subscribe('beforeToolsMenuRender');
+        $this->subscribe('newSurveySettings');
 
     }
 
@@ -303,7 +303,6 @@ class ResponseQualityChecker extends PluginBase
             'name' => get_class($this),
             'settings' => $surveySettings,
         ]);
-        $this->loadDefaultSettings();
     }
 
 
@@ -314,23 +313,6 @@ class ResponseQualityChecker extends PluginBase
         foreach ($event->get('settings') as $name => $value) {
             $this->set($name, $value, 'Survey', $event->get('survey'));
         }
-    }
-
-    private function loadDefaultSettings() {
-        $event = $this->event;
-        $surveyId = $this->survey->primaryKey;
-        $settings = [];
-        Yii::log("Loading settings from default", "info", __METHOD__);
-        $globalSettings = $this->getPluginSettings(true);
-
-        foreach ($globalSettings as $key => $setting) {
-            $settings[$key] = $setting['current'];
-        }
-
-        $event->set('settings', $settings);
-        $event->set('survey', $surveyId);
-        $this->newSurveySettings();
-
     }
 
     private function checkableQuestions()

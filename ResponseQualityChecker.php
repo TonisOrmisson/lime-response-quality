@@ -110,9 +110,10 @@ class ResponseQualityChecker extends PluginBase
         Yii::log("found ".count($questions)." questions for quality check " , 'info', __METHOD__);
         foreach ($questions as $question) {
             $questionQuality = $this->checkQuestionQuality($question, $response);
-            $questionQualities[] = $questionQuality;
-
-            Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->question , 'info', __METHOD__);
+            if($questionQuality->getItems() > 0) {
+                $questionQualities[] = $questionQuality;
+                Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->question , 'info', __METHOD__);
+            }
         }
         if($this->totalSubQuestions > 0) {
             $totalQuality = 0.0;

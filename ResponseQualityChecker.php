@@ -100,6 +100,7 @@ class ResponseQualityChecker extends PluginBase
 
     public function checkResponse(SurveyDynamic $response) {
         $questions = $this->questions;
+        $this->totalSubQuestions = 0;
         if(count($questions) == 0) {
             Yii::log('no questions found' , 'info', __METHOD__);
             return;
@@ -122,7 +123,7 @@ class ResponseQualityChecker extends PluginBase
             }
         }
 
-        Yii::log("total Subquestions " . $this->totalSubQuestions , 'info', __METHOD__);
+        Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
         Yii::log("totalQuality " .round($totalQuality * 100, 0). "%" , 'info', __METHOD__);
         $this->saveResult($totalQuality, $response);
 
@@ -167,7 +168,6 @@ class ResponseQualityChecker extends PluginBase
 
         $counts = array_count_values($answers);
         arsort($counts);
-        Yii::log("counts ". json_encode($counts)  , 'info', __METHOD__);
         $mostCheckedAnswer = current( $counts);
         $overlapPct = $mostCheckedAnswer / count($answers);
         if($overlapPct > 0.5 or $mostCheckedAnswer > 5) {

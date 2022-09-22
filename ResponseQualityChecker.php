@@ -36,6 +36,12 @@ class ResponseQualityChecker extends PluginBase
             'label' => 'The quality threshold to initiate kick-out of response',
             'default'=>0.3,
         ],
+        'unSubmitEnabled' => [
+            'type' => 'boolean',
+            'label' => 'Un-submit response when quality threshold is reached',
+            'default'=>false,
+        ],
+
         'targetQuestion' => [
             'type' => 'string',
             'label' => 'Tha name of the question to store the quality result',
@@ -59,18 +65,18 @@ class ResponseQualityChecker extends PluginBase
     public function afterSurveyComplete()
     {
         $responseId = $this->event->get('responseId');
-        Yii::log('afterSurveyComplete on response:' . $responseId, 'info', __METHOD__);
+        Yii::log('afterSurveyComplete on response:' . $responseId, 'trace', __METHOD__);
 
         $this->response = SurveyDynamic::model($this->survey->primaryKey)->findByPk($responseId);
         if(!($this->response instanceof SurveyDynamic)) {
             Yii::log('response not found' , 'info', __METHOD__);
             return;
         }
-        Yii::log('found response:' . $this->response->id, 'info', __METHOD__);
+        Yii::log('found response:' . $this->response->id, 'trace', __METHOD__);
 
         $this->loadSurvey();
         if(!$this->enabled()) {
-            Yii::log('plugin disabled' , 'info', __METHOD__);
+            Yii::log('plugin disabled' , 'trace', __METHOD__);
             return;
         }
         $this->questions = $this->checkableQuestions();
@@ -83,7 +89,7 @@ class ResponseQualityChecker extends PluginBase
         $questions = $this->questions;
         $this->totalSubQuestions = 0;
         if(count($questions) == 0) {
-            Yii::log('no questions found' , 'info', __METHOD__);
+            Yii::log('no questions found' , 'trace', __METHOD__);
             return;
         }
         $totalQuality = 1.0;
@@ -93,7 +99,7 @@ class ResponseQualityChecker extends PluginBase
             $questionQuality = $this->checkQuestionQuality($question, $response);
             if($questionQuality->getItems() > 0) {
                 $questionQualities[] = $questionQuality;
-                Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->title , 'info', __METHOD__);
+                Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->title , 'trace', __METHOD__);
             }
         }
         if($this->totalSubQuestions > 0) {
@@ -108,6 +114,9 @@ class ResponseQualityChecker extends PluginBase
         Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
         Yii::log("totalQuality " .round($totalQuality * 100, 0). "%" , 'info', __METHOD__);
         $this->saveResult($totalQuality, $response);
+        if($this->isTrashResult($totalQuality) && $this->unSubmitEnabled()) {
+            $this->unSubmitResponse($response);
+        }
 
     }
 
@@ -116,14 +125,14 @@ class ResponseQualityChecker extends PluginBase
 
     public function checkStraightLining(Question $question, SurveyDynamic $response) : QualityResult
     {
-        Yii::log('checkStraightLining:sid:'. $this->survey->primaryKey . ":response:" . $response->id .":" , 'info', __METHOD__);
+        Yii::log('checkStraightLining:sid:'. $this->survey->primaryKey . ":response:" . $response->id .":" , 'trace', __METHOD__);
         $subQuestions = $question->subquestions;
         $result = new QualityResult();
         if(count($subQuestions) == 0) {
-            Yii::log('no subQuestions found' , 'info', __METHOD__);
+            Yii::log('no subQuestions found' , 'trace', __METHOD__);
             return $result;
         }
-        Yii::log("found ".count($subQuestions)." subQuestions for quality check " , 'info', __METHOD__);
+        Yii::log("found ".count($subQuestions)." subQuestions for quality check " , 'trace', __METHOD__);
         $answers = [];
         $sgq = $question->getBasicFieldName();
         foreach ($subQuestions as $subQuestion) {
@@ -138,11 +147,11 @@ class ResponseQualityChecker extends PluginBase
             //Yii::log("checking $sgqa:". $answer  , 'info', __METHOD__);
         }
         if(count($answers) == 0) {
-            Yii::log('no answers found' , 'info', __METHOD__);
+            Yii::log('no answers found' , 'trace', __METHOD__);
             return $result;
         }
 
-        Yii::log("answers ". json_encode($answers)  , 'info', __METHOD__);
+        Yii::log("answers ". json_encode($answers)  , 'trace', __METHOD__);
 
         $counts = array_count_values($answers);
         arsort($counts);
@@ -153,9 +162,9 @@ class ResponseQualityChecker extends PluginBase
         } else {
             $result->setQuality(1- $overlapPct);
         }
-        Yii::log("counts ". json_encode($counts)  , 'info', __METHOD__);
-        Yii::log("most checked ". $mostCheckedAnswer  , 'info', __METHOD__);
-        Yii::log("overlapping % ". round($overlapPct * 100, 0). "%"  , 'info', __METHOD__);
+        Yii::log("counts ". json_encode($counts)  , 'trace', __METHOD__);
+        Yii::log("most checked ". $mostCheckedAnswer  , 'trace', __METHOD__);
+        Yii::log("overlapping % ". round($overlapPct * 100, 0). "%"  , 'trace', __METHOD__);
         return $result;
     }
 
@@ -167,12 +176,12 @@ class ResponseQualityChecker extends PluginBase
             return $this->targetQuestion;
         }
         $targetQuestionName = $this->get('targetQuestion','Survey', $this->survey->primaryKey);
-        Yii::log('looking for target question ' . $targetQuestionName, 'info', __METHOD__);
+        Yii::log('looking for target question ' . $targetQuestionName, 'trace', __METHOD__);
         $targetQuestion = $this->findQuestionByName($targetQuestionName);
         if($targetQuestion === null) {
             $this->targetQuestion = false;
         }
-        Yii::log('found target question ' . $targetQuestionName, 'info', __METHOD__);
+        Yii::log('found target question ' . $targetQuestionName, 'trace', __METHOD__);
         $this->targetQuestion = $targetQuestion;
         return $targetQuestion;
 
@@ -192,6 +201,7 @@ class ResponseQualityChecker extends PluginBase
     {
         return boolval($this->get("enabled", 'Survey', $this->survey->primaryKey));
     }
+
 
     public function actionIndex($sid)
     {
@@ -235,10 +245,10 @@ class ResponseQualityChecker extends PluginBase
         $totalQuality = round($totalQuality, 3);
         $targetQuestion = $this->targetQuestion();
         if(!($targetQuestion instanceof Question)) {
-            Yii::log('target question NOT found, not able to save result' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
+            Yii::log('target question NOT found, not able to save result' . json_encode($targetQuestion->attributes) , 'trace', __METHOD__);
             return;
         }
-        Yii::log('target question found' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
+        Yii::log('target question found' . json_encode($targetQuestion->attributes) , 'trace', __METHOD__);
 
         $sgqa = $targetQuestion->getBasicFieldName();
         /** @var CDbConnection $db */
@@ -249,8 +259,23 @@ class ResponseQualityChecker extends PluginBase
                 [$sgqa => $totalQuality],
                 'id='.$response->id
             );
-        Yii::log("Saved $rows records result " . $totalQuality , 'info', __METHOD__);
+        Yii::log("Saved $rows records result " . $totalQuality , 'trace', __METHOD__);
 
+    }
+
+    private function unSubmitResponse(SurveyDynamic $response) : void
+    {
+        /** @var CDbConnection $db */
+        $db = Yii::app()->db;
+        $rows = $db->createCommand()
+            ->update(
+                $this->survey->getResponsesTableName(),
+                ['submitdate' => new CDbExpression('null')],
+                'id='.$response->id
+            );
+        if($rows == 1) {
+            Yii::log("UnSubmitted response " . $response->id , 'info', __METHOD__);
+        }
     }
 
 
@@ -295,7 +320,7 @@ class ResponseQualityChecker extends PluginBase
                 $surveySettings[$key]['current'] = $currentSurveyValue;
             }
         }
-        Yii::log("Setting survey settings", "info", __METHOD__);
+        Yii::log("Setting survey settings", "trace", __METHOD__);
         $event->set("surveysettings.{$this->id}", [
             'name' => get_class($this),
             'settings' => $surveySettings,
@@ -305,14 +330,14 @@ class ResponseQualityChecker extends PluginBase
     private function checkWholeSurvey()
     {
         if(!$this->enabled()) {
-            Yii::log('plugin disabled' , 'info', __METHOD__);
+            Yii::log('plugin disabled' , 'trace', __METHOD__);
             return;
         }
         $this->questions = $this->checkableQuestions();
 
         $models = SurveyDynamic::model($this->survey->primaryKey);
         if($models->count() == 0) {
-            Yii::log('no responses found' , 'info', __METHOD__);
+            Yii::log('no responses found' , 'trace', __METHOD__);
             return;
         }
         foreach ($models->findAll() as $model) {
@@ -419,7 +444,7 @@ class ResponseQualityChecker extends PluginBase
         $surveyArray = $query->queryRow();
 
         if (empty($surveyArray)) {
-            Yii::log("Got empty survey", "info", __METHOD__);
+            Yii::log("Got empty survey", "trace", __METHOD__);
             return;
         }
         //Yii::log("Creating a survey from array", "info", __METHOD__);
@@ -431,6 +456,25 @@ class ResponseQualityChecker extends PluginBase
     private function checkQuestionQuality(Question $question, SurveyDynamic $response) : QualityResult
     {
         return $this->checkStraightLining($question, $response);
+    }
+
+    private function unSubmitEnabled(): bool
+    {
+        return boolval($this->get("unSubmitEnabled", 'Survey', $this->survey->primaryKey));
+    }
+
+    private function threshold(): float
+    {
+        return floatval($this->get("threshold", 'Survey', $this->survey->primaryKey));
+    }
+
+    private function isTrashResult(float $result): bool
+    {
+        $threshold = $this->threshold();
+        if($result < $threshold) {
+            return true;
+        }
+        return false;
     }
 
 }

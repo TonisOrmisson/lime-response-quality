@@ -78,25 +78,6 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
-    private function checkWholeSurvey()
-    {
-        if(!$this->enabled()) {
-            Yii::log('plugin disabled' , 'info', __METHOD__);
-            return;
-        }
-        $this->questions = $this->checkableQuestions();
-
-        $models = SurveyDynamic::model($this->survey->primaryKey);
-        if($models->count() == 0) {
-            Yii::log('no responses found' , 'info', __METHOD__);
-            return;
-        }
-        foreach ($models->findAll() as $model) {
-            $this->checkResponse($model);
-
-        }
-
-    }
 
     public function checkResponse(SurveyDynamic $response) {
         $questions = $this->questions;
@@ -131,10 +112,6 @@ class ResponseQualityChecker extends PluginBase
     }
 
 
-    private function checkQuestionQuality(Question $question, SurveyDynamic $response) : QualityResult
-    {
-        return $this->checkStraightLining($question, $response);
-    }
 
 
     public function checkStraightLining(Question $question, SurveyDynamic $response) : QualityResult
@@ -183,28 +160,6 @@ class ResponseQualityChecker extends PluginBase
     }
 
 
-    private function saveResult(float $totalQuality, SurveyDynamic $response) : void
-    {
-        $totalQuality = round($totalQuality, 3);
-        $targetQuestion = $this->targetQuestion();
-        if(!($targetQuestion instanceof Question)) {
-            Yii::log('target question NOT found, not able to save result' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
-            return;
-        }
-        Yii::log('target question found' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
-
-        $sgqa = $targetQuestion->getBasicFieldName();
-        /** @var CDbConnection $db */
-        $db = Yii::app()->db;
-        $rows = $db->createCommand()
-            ->update(
-                $this->survey->getResponsesTableName(),
-                [$sgqa => $totalQuality],
-                'id='.$response->id
-            );
-        Yii::log("Saved $rows records result " . $totalQuality , 'info', __METHOD__);
-
-    }
 
     public function targetQuestion() : ?Question
     {
@@ -238,40 +193,20 @@ class ResponseQualityChecker extends PluginBase
         return boolval($this->get("enabled", 'Survey', $this->survey->primaryKey));
     }
 
-    private function sessionKey()
+    public function actionIndex($sid)
     {
-        return self::SESSION_KEY."::".$this->survey->primaryKey;
-    }
-
-    private function loadSurvey()
-    {
-
-        $event = $this->event;
-        $surveyId = $event->get('surveyid');
-        if(empty($surveyId)) {
-            return;
+        $this->beforeAction($sid);
+        if (Yii::app()->request->isPostRequest) {
+            $this->checkWholeSurvey();
         }
-        //Yii::log("Loading survey $surveyId", "info", __METHOD__);
 
-        /**
-         * NB need to do it without find() since the code at hand is itself run
-         * after find() resulting in infinite loop
-         */
-        $query = Yii::app()->db->createCommand()
-            ->select('*')
-            ->from(Survey::model()->tableName())
-            ->where('sid=:sid')
-            ->bindParam(':sid', $surveyId, PDO::PARAM_STR);
-        $surveyArray = $query->queryRow();
-
-        if (empty($surveyArray)) {
-            Yii::log("Got empty survey", "info", __METHOD__);
-            return;
-        }
-        //Yii::log("Creating a survey from array", "info", __METHOD__);
-        $this->survey = (new Survey());
-        $this->survey->attributes = $surveyArray;
-
+        return $this->renderPartial('index',
+            [
+                'survey' => $this->survey,
+                'targetQuestion' => $this->targetQuestion,
+            ],
+            true
+        );
     }
 
 
@@ -286,28 +221,6 @@ class ResponseQualityChecker extends PluginBase
         $this->loadSurveySettings();
     }
 
-    private function loadSurveySettings(){
-        Yii::log("Trying to load survey settings from global", "info", __METHOD__);
-
-        $event = $this->event;
-        $globalSettings = $this->getPluginSettings(true);
-
-        $surveySettings = [];
-        foreach ($globalSettings as $key => $setting) {
-            $currentSurveyValue = $this->get($key, 'Survey', $event->get('survey'));
-            $surveySettings[$key] = $setting;
-            if(!empty($currentSurveyValue)) {
-                $surveySettings[$key]['current'] = $currentSurveyValue;
-            }
-        }
-        Yii::log("Setting survey settings", "info", __METHOD__);
-        $event->set("surveysettings.{$this->id}", [
-            'name' => get_class($this),
-            'settings' => $surveySettings,
-        ]);
-    }
-
-
     public function newSurveySettings()
     {
         $event = $this->event;
@@ -315,6 +228,52 @@ class ResponseQualityChecker extends PluginBase
         foreach ($event->get('settings') as $name => $value) {
             $this->set($name, $value, 'Survey', $event->get('survey'));
         }
+    }
+
+    private function saveResult(float $totalQuality, SurveyDynamic $response) : void
+    {
+        $totalQuality = round($totalQuality, 3);
+        $targetQuestion = $this->targetQuestion();
+        if(!($targetQuestion instanceof Question)) {
+            Yii::log('target question NOT found, not able to save result' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
+            return;
+        }
+        Yii::log('target question found' . json_encode($targetQuestion->attributes) , 'info', __METHOD__);
+
+        $sgqa = $targetQuestion->getBasicFieldName();
+        /** @var CDbConnection $db */
+        $db = Yii::app()->db;
+        $rows = $db->createCommand()
+            ->update(
+                $this->survey->getResponsesTableName(),
+                [$sgqa => $totalQuality],
+                'id='.$response->id
+            );
+        Yii::log("Saved $rows records result " . $totalQuality , 'info', __METHOD__);
+
+    }
+
+
+
+
+    private function checkWholeSurvey()
+    {
+        if(!$this->enabled()) {
+            Yii::log('plugin disabled' , 'info', __METHOD__);
+            return;
+        }
+        $this->questions = $this->checkableQuestions();
+
+        $models = SurveyDynamic::model($this->survey->primaryKey);
+        if($models->count() == 0) {
+            Yii::log('no responses found' , 'info', __METHOD__);
+            return;
+        }
+        foreach ($models->findAll() as $model) {
+            $this->checkResponse($model);
+
+        }
+
     }
 
     private function checkableQuestions()
@@ -363,50 +322,10 @@ class ResponseQualityChecker extends PluginBase
         return Question::model()->find($criteria);
     }
 
-    public function beforeToolsMenuRender() {
-        $event = $this->getEvent();
-
-        /** @var array $menuItems */
-        $menuItems = $event->get('menuItems');
-        $this->survey = Survey::model()->findByPk($event->get('surveyId'));
-
-        $menuItem = new \LimeSurvey\Menu\MenuItem([
-            'label' => $this->getName(),
-            'href' => $this->api->createUrl(
-                'admin/pluginhelper',
-                array_merge([
-                    'sa'     => 'sidebody',
-                    'plugin' => 'ResponseQualityChecker',
-                    'method' => 'actionIndex',
-                    'sid' => $this->survey->primaryKey,
-                ])
-            ),
-            'iconClass' => 'fa fa-exclamation-triangle  text-info',
-
-        ]);
-        $menuItems[] = $menuItem;
-        $event->set('menuItems', $menuItems);
-        return $menuItems;
-
-    }
 
 
 
-    public function actionIndex($sid)
-    {
-        $this->beforeAction($sid);
-        if (Yii::app()->request->isPostRequest) {
-            $this->checkWholeSurvey();
-        }
 
-        return $this->renderPartial('index',
-            [
-                'survey' => $this->survey,
-                'targetQuestion' => $this->targetQuestion,
-            ],
-            true
-        );
-    }
 
     private function beforeAction($sid) {
         $this->survey = Survey::model()->findByPk($sid);
@@ -432,5 +351,40 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
+    private function loadSurvey()
+    {
+
+        $event = $this->event;
+        $surveyId = $event->get('surveyid');
+        if(empty($surveyId)) {
+            return;
+        }
+        //Yii::log("Loading survey $surveyId", "info", __METHOD__);
+
+        /**
+         * NB need to do it without find() since the code at hand is itself run
+         * after find() resulting in infinite loop
+         */
+        $query = Yii::app()->db->createCommand()
+            ->select('*')
+            ->from(Survey::model()->tableName())
+            ->where('sid=:sid')
+            ->bindParam(':sid', $surveyId, PDO::PARAM_STR);
+        $surveyArray = $query->queryRow();
+
+        if (empty($surveyArray)) {
+            Yii::log("Got empty survey", "info", __METHOD__);
+            return;
+        }
+        //Yii::log("Creating a survey from array", "info", __METHOD__);
+        $this->survey = (new Survey());
+        $this->survey->attributes = $surveyArray;
+
+    }
+
+    private function checkQuestionQuality(Question $question, SurveyDynamic $response) : QualityResult
+    {
+        return $this->checkStraightLining($question, $response);
+    }
 
 }

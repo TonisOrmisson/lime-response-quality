@@ -1,7 +1,5 @@
 <?php
 
-use Yii;
-use LSYii_Application;
 
 /**
  * @author Tõnis Ormisson <tonis@andmemasin.eu>
@@ -25,32 +23,12 @@ class ResponseQualityChecker extends PluginBase
     /** @var null|Question|bool */
     private $targetQuestion = null;
 
-    protected $settings = [
-        'enabled' => [
-            'type' => 'boolean',
-            'label' => 'Enable plugin for survey',
-            'default'=>false,
-        ],
-        'threshold' => [
-            'type' => 'float',
-            'label' => 'The quality threshold to initiate kick-out of response',
-            'default'=>0.3,
-        ],
-        'unSubmitEnabled' => [
-            'type' => 'boolean',
-            'label' => 'Un-submit response when quality threshold is reached',
-            'default'=>false,
-        ],
-
-        'targetQuestion' => [
-            'type' => 'string',
-            'label' => 'Tha name of the question to store the quality result',
-            'default'=>'quality',
-        ],
-    ];
+    protected $settings = [];
 
     /* Register plugin on events*/
     public function init() {
+        $this->defaults();
+
         $this->subscribe('afterFindSurvey');
         $this->subscribe('beforeSurveySettings');
         $this->subscribe('afterSurveyComplete');
@@ -58,6 +36,7 @@ class ResponseQualityChecker extends PluginBase
         $this->subscribe('newSurveySettings');
 
     }
+
 
     public function afterSurveyComplete()
     {
@@ -114,6 +93,8 @@ class ResponseQualityChecker extends PluginBase
         if($this->isTrashResult($totalQuality) && $this->unSubmitEnabled()) {
             $this->unSubmitResponse($response);
         }
+
+        $this->sendResultToApp($response, $this->totalSubQuestions, $totalQuality);
 
     }
 
@@ -235,6 +216,101 @@ class ResponseQualityChecker extends PluginBase
         foreach ($event->get('settings') as $name => $value) {
             $this->set($name, $value, 'Survey', $event->get('survey'));
         }
+    }
+
+    public function getSurvey() : Survey
+    {
+        return $this->survey;
+    }
+
+    private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
+    {
+        $externalAppNameQuestionName = $this->getExternalAppNameQuestion();
+        if($externalAppNameQuestionName === null) {
+            return false;
+        }
+        $appNameQuestion = $this->findQuestionByName($externalAppNameQuestionName);
+        if($appNameQuestion === null) {
+            Yii::log("could not find question $externalAppNameQuestionName in survey:" . $this->survey->primaryKey, 'error', __METHOD__);
+            return false;
+        }
+        $fieldName = $appNameQuestion->getBasicFieldName();
+
+        $appName = $response->$fieldName;
+        if(empty($appName)){
+            Yii::log("no app name value found for resonse {$response->id} in survey:" . $this->survey->primaryKey, 'info', __METHOD__);
+            return false;
+        }
+
+        $apiConfig = $this->apiConfig($appName);
+
+        if($apiConfig === null) {
+            Yii::log("no api config found for app $appName in survey:" . $this->survey->primaryKey, 'info', __METHOD__);
+            return false;
+        }
+
+        Yii::log("Sending response quality to app $appName in survey:" . $this->survey->primaryKey, 'info', __METHOD__);
+        $postService = new ExternalPostService(
+            $response,
+            $apiConfig,
+            $this->survey,
+            $subQuestionsCount,
+            $qualityScore
+        );
+        $postService->run();
+        return true;
+    }
+
+
+
+
+    private function defaults() : void
+    {
+
+        $this->settings = [
+            'enabled' => [
+                'type' => 'boolean',
+                'label' => 'Enable plugin for survey',
+                'default'=>false,
+            ],
+            'threshold' => [
+                'type' => 'float',
+                'label' => 'The quality threshold to initiate kick-out of response',
+                'default'=>0.3,
+            ],
+            'unSubmitEnabled' => [
+                'type' => 'boolean',
+                'label' => 'Un-submit response when quality threshold is reached',
+                'default'=>false,
+            ],
+
+            'targetQuestion' => [
+                'type' => 'string',
+                'label' => 'The name of the question to store the quality result',
+                'default'=>'quality',
+            ],
+            'externalAppNameQuestion' =>[
+                'type' => 'string',
+                'label' => 'The name of the question that sores the relevant app-name of each response. The app name should match with the app name in external app configuration to be able to send quality results to the external application.',
+                'default'=>'appname',
+            ],
+            'external-apps' => [
+                'type' => 'json',
+                'label' => 'External apps config to send quality results to as json. An application config must have an '
+                            . 'format like this: { "appname": { "url": "http://example.com", "auth-token": "secret-token" } }',
+                'default' => json_encode([
+                    'app1' => [
+                        'url' => 'https://example.com/app1',
+                        'auth-token' => 'secret',
+                    ],
+                    'app2' => [
+                        'url' => 'https://example.com/app2',
+                        'auth-token' => 'secret2',
+                    ],
+                ]),
+            ],
+
+        ];
     }
 
     private function saveResult(float $totalQuality, SurveyDynamic $response) : void
@@ -465,6 +541,39 @@ class ResponseQualityChecker extends PluginBase
         return floatval($this->get("threshold", 'Survey', $this->survey->primaryKey));
     }
 
+    private function externalAppNameQuestion(): ?string
+    {
+        $value = trim(strval($this->get("externalAppNameQuestion", 'Survey', $this->survey->primaryKey)));
+        if(empty($value)) {
+            return null;
+        }
+        return $value;
+    }
+
+
+    private function apiConfig(string $appName): ?ApiConfig
+    {
+        $config = $this->get("external-apps", 'Survey', $this->survey->primaryKey);
+        $configArray = json_decode($config, true);
+        if(empty($configArray)) {
+            return null;
+        }
+        if(!array_key_exists($appName, $configArray)) {
+            return null;
+        }
+        $appConfig = $configArray[$appName];
+
+        if(!isset($appConfig['url'])) {
+            return null;
+        }
+        if(!isset($appConfig['auth-token'])) {
+            return null;
+        }
+
+        return new ApiConfig($appConfig['url'], $appConfig['auth-token']);
+
+    }
+
     private function isTrashResult(float $result): bool
     {
         $threshold = $this->threshold();
@@ -473,5 +582,6 @@ class ResponseQualityChecker extends PluginBase
         }
         return false;
     }
+
 
 }

@@ -9,7 +9,7 @@ questions. This is a very simple check, but it is a start.
 
 # Requirements
 Requires minimum LimeSurvey version 3.0.1
-PHP8.0 or higher
+PHP7.4 or higher
 
 # Usage
 ## 1 Install 

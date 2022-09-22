@@ -49,9 +49,6 @@ class ResponseQualityChecker extends PluginBase
         ],
     ];
 
-    const SESSION_KEY = "ResponseQualityChecker";
-
-
     /* Register plugin on events*/
     public function init() {
         $this->subscribe('afterFindSurvey');

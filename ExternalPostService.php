@@ -65,8 +65,8 @@ class ExternalPostService
         $options = [
             'headers' => $headers,
             'form_params' => $data,
-            'timeout' => 1,
-            'connect_timeout' => 1,
+            'timeout' => 2,
+            'connect_timeout' => 2,
         ];
 
         try {

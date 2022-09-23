@@ -19,7 +19,8 @@ class ExternalPostService
             ApiConfig $config,
             Survey $survey,
             int $numberOfAssessedItems,
-            float $qualityScore
+            float $qualityScore,
+            string $responseIdFieldName = 'token'
     )
     {
         $this->response = $response;
@@ -28,12 +29,13 @@ class ExternalPostService
         $this->qualityScore = $qualityScore;
         $this->url = $config->url;
         $this->authenticationBearerToken = $config->authBearerToken;
+        $this->responseIdFieldName = $responseIdFieldName;
     }
 
     public function run()
     {
         if(!isset($this->response->{$this->responseIdFieldName})) {
-            Yii::log("Response ID field '{$this->responseIdFieldName}' not set for survey " . $this->survey->primaryKey, 'error', __METHOD__);
+            Yii::log("Response ID field '{$this->responseIdFieldName}' not available for survey " . $this->survey->primaryKey, 'error', __METHOD__);
             return;
         }
         $data= [
@@ -48,18 +50,43 @@ class ExternalPostService
     private function makeHeaders(){
         return [
             'Authorization' => 'Bearer ' . $this->authenticationBearerToken,
+            'Accept'        => 'application/json',
         ];
     }
 
     private function makeRequest(array $data)
     {
+        Yii::log($this->authenticationBearerToken, 'info', __METHOD__);
         Yii::log("Sending response data to external app,".$this->survey->primaryKey
             ." sid: response : " .$this->response->{$this->responseIdFieldName}
             , 'info', __METHOD__);
         $client = new Client();
-        $headers = array_merge($this->makeHeaders(), $data);
-        // Send an asynchronous request.
-        $promise = $client->postAsync($this->url, $headers);
+        $headers = $this->makeHeaders();
+        $options = [
+            'headers' => $headers,
+            'form_params' => $data,
+            'timeout' => 1,
+            'connect_timeout' => 1,
+        ];
+
+        try {
+            $result = $client->post($this->url, $options);
+            if($result->getStatusCode() === 200) {
+                Yii::log("Response data sent to external app, sid:".$this->survey->primaryKey
+                    ." response : " .$this->response->{$this->responseIdFieldName}
+                    , 'info', __METHOD__);
+                Yii::log("response:" . json_encode($result->getBody()->getContents()), 'trace', __METHOD__);
+            } else {
+                Yii::log("Response data sending failed for sid:".$this->survey->primaryKey
+                    ." response : " .$this->response->{$this->responseIdFieldName}
+                    . " error: " .$result->getBody()->getContents()
+                    , 'error', __METHOD__);
+            }
+        } catch (\Throwable $th) {
+            Yii::log("Error sending response data to external app,sid:".$this->survey->primaryKey
+                ." response: " .$this->response->{$this->responseIdFieldName}." error:" . $th->getMessage()
+                , 'error', __METHOD__);
+        }
 
     }
 

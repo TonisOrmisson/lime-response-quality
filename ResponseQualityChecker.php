@@ -225,7 +225,7 @@ class ResponseQualityChecker extends PluginBase
 
     private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
     {
-        $externalAppNameQuestionName = $this->getExternalAppNameQuestion();
+        $externalAppNameQuestionName = $this->externalAppNameQuestion();
         if($externalAppNameQuestionName === null) {
             return false;
         }
@@ -255,7 +255,8 @@ class ResponseQualityChecker extends PluginBase
             $apiConfig,
             $this->survey,
             $subQuestionsCount,
-            $qualityScore
+            $qualityScore,
+            $this->responseIdQuestionFieldName()
         );
         $postService->run();
         return true;
@@ -288,6 +289,11 @@ class ResponseQualityChecker extends PluginBase
                 'type' => 'string',
                 'label' => 'The name of the question to store the quality result',
                 'default'=>'quality',
+            ],
+            'responseIdFieldName' => [
+                'type' => 'string',
+                'label' => 'The name of the question/or attribute of response id for sending to external system. Could be a question name or a field name eg token',
+                'default'=>'token',
             ],
             'externalAppNameQuestion' =>[
                 'type' => 'string',
@@ -549,27 +555,54 @@ class ResponseQualityChecker extends PluginBase
         }
         return $value;
     }
+    private function responseIdFieldName(): ?string
+    {
+        $value = trim(strval($this->get("responseIdFieldName", 'Survey', $this->survey->primaryKey)));
+        if(empty($value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    private function  responseIdQuestionFieldName():?string
+    {
+        $questionName = $this->responseIdFieldName();
+        if(empty($questionName)) {
+            return null;
+        }
+        $question = $this->findQuestionByName($questionName);
+        if(empty($question)) {
+            return null;
+        }
+        return $question->getBasicFieldName();
+    }
 
 
     private function apiConfig(string $appName): ?ApiConfig
     {
+        Yii::log("Getting api config for $appName", "trace", __METHOD__);
         $config = $this->get("external-apps", 'Survey', $this->survey->primaryKey);
         $configArray = json_decode($config, true);
         if(empty($configArray)) {
+            Yii::log("Empty api config for $appName", "trace", __METHOD__);
             return null;
         }
         if(!array_key_exists($appName, $configArray)) {
+            Yii::log("No api config found for $appName", "trace", __METHOD__);
             return null;
         }
         $appConfig = $configArray[$appName];
 
         if(!isset($appConfig['url'])) {
+            Yii::log("Api config url not found for $appName", "trace", __METHOD__);
             return null;
         }
         if(!isset($appConfig['auth-token'])) {
+            Yii::log("Api config auth-token not found for $appName", "trace", __METHOD__);
             return null;
         }
 
+        Yii::log("Creating ApiConfig for $appName", "trace", __METHOD__);
         return new ApiConfig($appConfig['url'], $appConfig['auth-token']);
 
     }

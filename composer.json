@@ -22,6 +22,14 @@
 
         "guzzlehttp/guzzle": "^7.0"
     },
+    "config" : {
+        "allow-plugins": {
+            "yiisoft/yii2-composer": true
+        },
+        "platform": {
+            "php": "7.4.0"
+        }
+    },
     "extra": {
         "branch-alias": {
             "dev-master": "1.0.x-dev"

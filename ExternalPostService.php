@@ -14,12 +14,14 @@ class ExternalPostService
     private Survey $survey;
     private int $assessedItemsCount = 0;
     private float $qualityScore;
+    private bool $sendApiRequest = true;
 
     public function __construct(SurveyDynamic $response,
             ApiConfig $config,
             Survey $survey,
             int $numberOfAssessedItems,
             float $qualityScore,
+            bool $sendApiRequest = true,
             ?string $responseIdFieldName = 'token'
     )
     {
@@ -30,6 +32,7 @@ class ExternalPostService
         $this->url = $config->url;
         $this->authenticationBearerToken = $config->authBearerToken;
         $this->responseIdFieldName = $responseIdFieldName;
+        $this->sendApiRequest = $sendApiRequest;
     }
 
     public function run()

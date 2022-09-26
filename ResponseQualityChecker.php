@@ -180,8 +180,13 @@ class ResponseQualityChecker extends PluginBase
     {
         $this->beforeAction($sid);
         $this->sendApiRequest = false;
+        /** @var LSYii_Application $app */
+        $app = Yii::app();
+        $request = $app->request;
 
-        if (Yii::app()->request->isPostRequest) {
+        if ($request->isPostRequest) {
+            $this->sendApiRequest = boolval($request->getPost('sendApiRequest'));
+            Yii::log('sendApiRequest: ' . strval($this->sendApiRequest), 'trace', __METHOD__);
             $this->checkWholeSurvey();
         }
 
@@ -222,10 +227,6 @@ class ResponseQualityChecker extends PluginBase
         return $this->survey;
     }
 
-    public function setSendApiRequest(bool $sendApiRequest)
-    {
-        $this->sendApiRequest = $sendApiRequest;
-    }
 
     private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
     {
@@ -260,6 +261,7 @@ class ResponseQualityChecker extends PluginBase
             $this->survey,
             $subQuestionsCount,
             $qualityScore,
+            $this->sendApiRequest,
             $this->responseIdQuestionFieldName()
         );
         $postService->run();

@@ -573,6 +573,9 @@ class ResponseQualityChecker extends PluginBase
     private function  responseIdQuestionFieldName():?string
     {
         $questionName = $this->responseIdFieldName();
+        if($questionName === 'token') {
+            return 'token';
+        }
         if(empty($questionName)) {
             return null;
         }

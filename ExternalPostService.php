@@ -20,7 +20,7 @@ class ExternalPostService
             Survey $survey,
             int $numberOfAssessedItems,
             float $qualityScore,
-            string $responseIdFieldName = 'token'
+            ?string $responseIdFieldName = 'token'
     )
     {
         $this->response = $response;

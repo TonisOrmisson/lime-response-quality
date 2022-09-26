@@ -25,6 +25,12 @@ Use git to clone into folder `ResponseQualityChecker`:
 $ git clone https://github.com/TonisOrmisson/lime-response-quality.git ResponseQualityChecker
 ```
 
+install composer dependencies:
+```
+```
+$ cd ResponseQualityChecker & composer install --no-dev
+```
+
 
 ## 2 Activate plugin
 

@@ -70,6 +70,7 @@ class ExternalPostService
         ];
 
         try {
+            Yii::log("Posting reponse data to api", 'trace', __METHOD__);
             $result = $client->post($this->url, $options);
             if($result->getStatusCode() === 200) {
                 Yii::log("Response data sent to external app, sid:".$this->survey->primaryKey
@@ -82,11 +83,14 @@ class ExternalPostService
                     . " error: " .$result->getBody()->getContents()
                     , 'error', __METHOD__);
             }
+            return;
         } catch (\Throwable $th) {
             Yii::log("Error sending response data to external app,sid:".$this->survey->primaryKey
                 ." response: " .$this->response->{$this->responseIdFieldName}." error:" . $th->getMessage()
                 , 'error', __METHOD__);
+            return;
         }
+        Yii::log("Should not br here", 'error', __METHOD__);
 
     }
 

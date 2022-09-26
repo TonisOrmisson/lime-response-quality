@@ -14,16 +14,14 @@ class ResponseQualityChecker extends PluginBase
     static protected $description = 'Response Quality Checker';
     static protected $name = 'Response Quality Checker';
 
-    private SurveyDynamic $response;
-
     /** @var Survey $survey */
     private Survey $survey;
     private int $totalSubQuestions = 0;
     private array $questions = [];
     /** @var null|Question|bool */
     private $targetQuestion = null;
-
     protected $settings = [];
+    private bool $sendApiRequest = true;
 
     /* Register plugin on events*/
     public function init() {
@@ -43,12 +41,12 @@ class ResponseQualityChecker extends PluginBase
         $responseId = $this->event->get('responseId');
         Yii::log('afterSurveyComplete on response:' . $responseId, 'trace', __METHOD__);
 
-        $this->response = SurveyDynamic::model($this->survey->primaryKey)->findByPk($responseId);
-        if(!($this->response instanceof SurveyDynamic)) {
+        $response = SurveyDynamic::model($this->survey->primaryKey)->findByPk($responseId);
+        if(!($response instanceof SurveyDynamic)) {
             Yii::log('response not found' , 'info', __METHOD__);
             return;
         }
-        Yii::log('found response:' . $this->response->id, 'trace', __METHOD__);
+        Yii::log('found response:' . $response->id, 'trace', __METHOD__);
 
         $this->loadSurvey();
         if(!$this->enabled()) {
@@ -56,7 +54,7 @@ class ResponseQualityChecker extends PluginBase
             return;
         }
         $this->questions = $this->checkableQuestions();
-        $this->checkResponse($this->response);
+        $this->checkResponse($response);
 
     }
 
@@ -94,7 +92,9 @@ class ResponseQualityChecker extends PluginBase
             $this->unSubmitResponse($response);
         }
 
-        $this->sendResultToApp($response, $this->totalSubQuestions, $totalQuality);
+        if($this->sendApiRequest) {
+            $this->sendResultToApp($response, $this->totalSubQuestions, $totalQuality);
+        }
 
     }
 
@@ -168,11 +168,6 @@ class ResponseQualityChecker extends PluginBase
 
     public function afterFindSurvey() {
         $this->loadSurvey();
-        if (empty($this->survey)) {
-            return;
-        }
-        $surveyId = $this->survey->primaryKey;
-
     }
 
     public function enabled(): bool
@@ -184,6 +179,8 @@ class ResponseQualityChecker extends PluginBase
     public function actionIndex($sid)
     {
         $this->beforeAction($sid);
+        $this->sendApiRequest = false;
+
         if (Yii::app()->request->isPostRequest) {
             $this->checkWholeSurvey();
         }
@@ -192,6 +189,8 @@ class ResponseQualityChecker extends PluginBase
             [
                 'survey' => $this->survey,
                 'targetQuestion' => $this->targetQuestion,
+                'responseIdFieldName' => $this->responseIdFieldName(),
+                'externalAppNameQuestion' => $this->externalAppNameQuestion()
             ],
             true
         );
@@ -221,6 +220,11 @@ class ResponseQualityChecker extends PluginBase
     public function getSurvey() : Survey
     {
         return $this->survey;
+    }
+
+    public function setSendApiRequest(bool $sendApiRequest)
+    {
+        $this->sendApiRequest = $sendApiRequest;
     }
 
     private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
@@ -414,14 +418,16 @@ class ResponseQualityChecker extends PluginBase
         }
         $this->questions = $this->checkableQuestions();
 
-        $models = SurveyDynamic::model($this->survey->primaryKey);
-        if($models->count() == 0) {
+        $model = SurveyDynamic::model($this->survey->primaryKey);
+        $criteria = new CDbCriteria();
+        $criteria->addCondition('submitdate is not null');
+        $models = $model->findAll($criteria);
+        if(count($models) == 0) {
             Yii::log('no responses found' , 'trace', __METHOD__);
             return;
         }
-        foreach ($models->findAll() as $model) {
+        foreach ($models as $model) {
             $this->checkResponse($model);
-
         }
 
     }

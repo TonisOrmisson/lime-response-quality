@@ -153,7 +153,7 @@ class ResponseQualityChecker extends PluginBase
         if($this->targetQuestion !== null) {
             return $this->targetQuestion;
         }
-        $targetQuestionName = $this->get('targetQuestion','Survey', $this->survey->primaryKey);
+        $targetQuestionName = $this->settingValue('targetQuestion');
         Yii::log('looking for target question ' . $targetQuestionName, 'trace', __METHOD__);
         $targetQuestion = $this->findQuestionByName($targetQuestionName);
         if($targetQuestion === null) {

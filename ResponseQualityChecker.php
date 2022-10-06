@@ -619,7 +619,11 @@ class ResponseQualityChecker extends PluginBase
         return false;
     }
 
-    private function settingValue(string $key) : ?mixed
+    /**
+     * @param string $key
+     * @return mixed|string|null
+     */
+    private function settingValue(string $key)
     {
         $default = $this->settings[$key]['default'];
         $value = $this->get($key, 'Survey', $this->survey->primaryKey, $default);

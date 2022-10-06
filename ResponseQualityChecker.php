@@ -622,7 +622,11 @@ class ResponseQualityChecker extends PluginBase
     private function settingValue(string $key) : ?mixed
     {
         $default = $this->settings[$key]['default'];
-        return $this->get($key, 'Survey', $this->survey->primaryKey, $default);
+        $value = $this->get($key, 'Survey', $this->survey->primaryKey, $default);
+        if($value = "" or $value === null) {
+            return $default;
+        }
+        return $value;
 
     }
 

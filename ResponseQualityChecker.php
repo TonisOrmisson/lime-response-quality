@@ -547,29 +547,21 @@ class ResponseQualityChecker extends PluginBase
 
     private function unSubmitEnabled(): bool
     {
-        return boolval($this->get("unSubmitEnabled", 'Survey', $this->survey->primaryKey));
+        return boolval($this->settingValue('unSubmitEnabled'));
     }
 
     private function threshold(): float
     {
-        return floatval($this->get("threshold", 'Survey', $this->survey->primaryKey));
+        return floatval($this->settingValue('threshold'));
     }
 
     private function externalAppNameQuestion(): ?string
     {
-        $value = trim(strval($this->get("externalAppNameQuestion", 'Survey', $this->survey->primaryKey)));
-        if(empty($value)) {
-            return null;
-        }
-        return $value;
+        return trim(strval($this->settingValue('externalAppNameQuestion')));
     }
     private function responseIdFieldName(): ?string
     {
-        $value = trim(strval($this->get("responseIdFieldName", 'Survey', $this->survey->primaryKey)));
-        if(empty($value)) {
-            return null;
-        }
-        return $value;
+        return trim(strval($this->settingValue('responseIdFieldName')));
     }
 
     private function  responseIdQuestionFieldName():?string
@@ -625,6 +617,13 @@ class ResponseQualityChecker extends PluginBase
             return true;
         }
         return false;
+    }
+
+    private function settingValue(string $key) : mixed
+    {
+        $default = $this->settings[$key]['default'];
+        return $this->get($key, 'Survey', $this->survey->primaryKey, $default);
+
     }
 
 

@@ -630,7 +630,7 @@ class ResponseQualityChecker extends PluginBase
     private function apiConfig(string $appName): ?ApiConfig
     {
         Yii::log("Getting api config for $appName", "trace", __METHOD__);
-        $config = $this->get("external-apps", 'Survey', $this->survey->primaryKey);
+        $config = $this->settingValue('external-apps');
         $configArray = json_decode($config, true);
         if(empty($configArray)) {
             Yii::log("Empty api config for $appName", "trace", __METHOD__);

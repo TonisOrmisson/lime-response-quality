@@ -673,9 +673,9 @@ class ResponseQualityChecker extends PluginBase
     {
         Yii::log("Looking for setting key $key", "trace", __METHOD__);
         $default = $this->settings[$key]['default'];
-        $value = $this->get($key, 'Survey', $this->survey->primaryKey, $default);
+        $value = $this->get($key, 'Survey', $this->survey->primaryKey);
         if($value == "" or $value == null) {
-            $globalValue = $this->get($key, null, null, $default);
+            $globalValue = $this->get($key);
             if($globalValue == "" or $globalValue == null) {
                 Yii::log("using default value for setting $key :" . $value, "trace", __METHOD__);
                 return $default;

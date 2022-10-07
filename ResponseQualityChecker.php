@@ -158,7 +158,10 @@ class ResponseQualityChecker extends PluginBase
         $targetQuestion = $this->findQuestionByName($targetQuestionName);
         if($targetQuestion === null) {
             $this->targetQuestion = false;
+            Yii::log("target question $targetQuestionName not found"  , 'trace', __METHOD__);
+            return null;
         }
+
         Yii::log('found target question ' . $targetQuestionName, 'trace', __METHOD__);
         $this->targetQuestion = $targetQuestion;
         return $targetQuestion;
@@ -194,6 +197,7 @@ class ResponseQualityChecker extends PluginBase
             [
                 'survey' => $this->survey,
                 'targetQuestion' => $this->targetQuestion,
+                'targetQuestionName' => $this->settingValue('targetQuestion'),
                 'responseIdFieldName' => $this->responseIdFieldName(),
                 'externalAppNameQuestion' => $this->externalAppNameQuestion()
             ],
@@ -627,7 +631,7 @@ class ResponseQualityChecker extends PluginBase
     {
         $default = $this->settings[$key]['default'];
         $value = $this->get($key, 'Survey', $this->survey->primaryKey, $default);
-        if($value = "" or $value === null) {
+        if($value == "" or $value === null) {
             return $default;
         }
         return $value;

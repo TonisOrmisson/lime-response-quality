@@ -6,6 +6,7 @@ use tonisormisson\version\Version;
 /** @var AdminController $this */
 /** @var ?Question $targetQuestion */
 /** @var string $responseIdFieldName */
+/** @var string $targetQuestionName */
 /** @var string $externalAppNameQuestion */
 
 $this->pageTitle = "import";
@@ -39,7 +40,9 @@ $this->pageTitle = "import";
             </div>
         </div>
     <?php else:?>
-        no target question
+        <div class="alert alert-danger">
+            The quality target question <code><?=$targetQuestionName?></code> does not exist in the survey.
+        </div>
     <?php endif;?>
 
 </div>

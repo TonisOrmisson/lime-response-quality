@@ -20,12 +20,23 @@ class ResponseQualityChecker extends PluginBase
     private array $questions = [];
     /** @var null|Question|bool */
     private $targetQuestion = null;
+    /** @var null|Question|bool */
+    private $appNameQuestion = null;
     protected $settings = [];
     private bool $sendApiRequest = true;
 
+    public function __construct(\LimeSurvey\PluginManager\PluginManager $manager, $id)
+    {
+        parent::__construct($manager, $id);
+        $this->defaults();
+
+    }
+
+
     /* Register plugin on events*/
     public function init() {
-        $this->defaults();
+        Yii::log("Initializing plugin", "trace", __METHOD__);
+
 
         $this->subscribe('afterFindSurvey');
         $this->subscribe('beforeSurveySettings');
@@ -156,8 +167,9 @@ class ResponseQualityChecker extends PluginBase
         $targetQuestionName = $this->settingValue('targetQuestion');
         Yii::log('looking for target question ' . $targetQuestionName, 'trace', __METHOD__);
         $targetQuestion = $this->findQuestionByName($targetQuestionName);
+
         if($targetQuestion === null) {
-            $this->targetQuestion = false;
+            $this->targetQuestion = null;
             Yii::log("target question $targetQuestionName not found"  , 'trace', __METHOD__);
             return null;
         }
@@ -168,6 +180,25 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
+    public function appNameQuestion() : ?Question
+    {
+        if($this->appNameQuestion !== null) {
+            return $this->appNameQuestion;
+        }
+        $appNameQuestionName = $this->settingValue('externalAppNameQuestion');
+        Yii::log('looking for app-name question ' . $appNameQuestionName, 'trace', __METHOD__);
+        $appNameQuestion = $this->findQuestionByName($appNameQuestionName);
+        if($appNameQuestion === null) {
+            $this->appNameQuestion = null;
+            Yii::log("app-name question $appNameQuestionName not found"  , 'trace', __METHOD__);
+            return null;
+        }
+
+        Yii::log('found app-name question ' . $appNameQuestionName, 'trace', __METHOD__);
+        $this->appNameQuestion = $appNameQuestion;
+        return $appNameQuestion;
+
+    }
 
     public function afterFindSurvey() {
         $this->loadSurvey();
@@ -182,6 +213,7 @@ class ResponseQualityChecker extends PluginBase
     public function actionIndex($sid)
     {
         $this->beforeAction($sid);
+        Yii::log(json_encode($this->targetQuestion->attributes), 'trace', __METHOD__);
         $this->sendApiRequest = false;
         /** @var LSYii_Application $app */
         $app = Yii::app();
@@ -197,9 +229,10 @@ class ResponseQualityChecker extends PluginBase
             [
                 'survey' => $this->survey,
                 'targetQuestion' => $this->targetQuestion,
+                'appNameQuestion' => $this->appNameQuestion,
                 'targetQuestionName' => $this->settingValue('targetQuestion'),
                 'responseIdFieldName' => $this->responseIdFieldName(),
-                'externalAppNameQuestion' => $this->externalAppNameQuestion()
+                'externalAppNameQuestionName' => $this->externalAppNameQuestionName()
             ],
             true
         );
@@ -234,7 +267,7 @@ class ResponseQualityChecker extends PluginBase
 
     private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
     {
-        $externalAppNameQuestionName = $this->externalAppNameQuestion();
+        $externalAppNameQuestionName = $this->externalAppNameQuestionName();
         if($externalAppNameQuestionName === null) {
             return false;
         }
@@ -277,6 +310,11 @@ class ResponseQualityChecker extends PluginBase
 
     private function defaults() : void
     {
+        if(count($this->settings)> 0 ) {
+            return;
+        }
+
+        Yii::log("Setting defaults", "trace", __METHOD__);
 
         $this->settings = [
             'enabled' => [
@@ -327,6 +365,8 @@ class ResponseQualityChecker extends PluginBase
             ],
 
         ];
+        Yii::log("Settings:" . json_encode($this->settings), "trace", __METHOD__);
+
     }
 
     private function saveResult(float $totalQuality, SurveyDynamic $response) : void
@@ -490,8 +530,10 @@ class ResponseQualityChecker extends PluginBase
 
 
     private function beforeAction($sid) {
+        $this->defaults();
         $this->survey = Survey::model()->findByPk($sid);
         $this->targetQuestion();
+        $this->appNameQuestion();
 
     }
 
@@ -559,7 +601,7 @@ class ResponseQualityChecker extends PluginBase
         return floatval($this->settingValue('threshold'));
     }
 
-    private function externalAppNameQuestion(): ?string
+    private function externalAppNameQuestionName(): ?string
     {
         return trim(strval($this->settingValue('externalAppNameQuestion')));
     }
@@ -629,9 +671,11 @@ class ResponseQualityChecker extends PluginBase
      */
     private function settingValue(string $key)
     {
+        Yii::log("Looking for setting key $key", "trace", __METHOD__);
         $default = $this->settings[$key]['default'];
         $value = $this->get($key, 'Survey', $this->survey->primaryKey, $default);
         if($value == "" or $value === null) {
+            Yii::log("using default value for setting $key :" . json_encode($this->settings), "trace", __METHOD__);
             return $default;
         }
         return $value;

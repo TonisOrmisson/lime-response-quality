@@ -5,9 +5,10 @@ use tonisormisson\version\Version;
 /** @var Survey $survey */
 /** @var AdminController $this */
 /** @var ?Question $targetQuestion */
+/** @var ?Question $appNameQuestion */
 /** @var string $responseIdFieldName */
 /** @var string $targetQuestionName */
-/** @var string $externalAppNameQuestion */
+/** @var string $externalAppNameQuestionName */
 
 $this->pageTitle = "import";
 ?>
@@ -29,7 +30,7 @@ $this->pageTitle = "import";
                 <div class="alert alert-info">
                     The API request will use the field <code><?= $responseIdFieldName ?></code> as the response ID
                     while sending the response data to the external app. The external app is defined by the field
-                    <code><?= $externalAppNameQuestion ?></code> in the survey.
+                    <code><?= $externalAppNameQuestionName ?></code> in the survey.
                 </div>
                 <?= CHtml::submitButton('Check all survey responses', [
                     'confirm'=> 'Are you Sure',

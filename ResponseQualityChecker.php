@@ -17,13 +17,14 @@ class ResponseQualityChecker extends PluginBase
     /** @var Survey $survey */
     private Survey $survey;
     private int $totalSubQuestions = 0;
-    private array $questions = [];
+    private array $straightLiningQuestions = [];
     /** @var null|Question|bool */
     private $targetQuestion = null;
     /** @var null|Question|bool */
     private $appNameQuestion = null;
     protected $settings = [];
     private bool $sendApiRequest = true;
+    private float $totalQuality = 1.0;
 
     public function __construct(\LimeSurvey\PluginManager\PluginManager $manager, $id)
     {
@@ -36,7 +37,6 @@ class ResponseQualityChecker extends PluginBase
     /* Register plugin on events*/
     public function init() {
         Yii::log("Initializing plugin", "trace", __METHOD__);
-
 
         $this->subscribe('afterFindSurvey');
         $this->subscribe('beforeSurveySettings');
@@ -64,20 +64,104 @@ class ResponseQualityChecker extends PluginBase
             Yii::log('plugin disabled' , 'trace', __METHOD__);
             return;
         }
-        $this->questions = $this->checkableQuestions();
+        $this->straightLiningQuestions = $this->straightLiningQuestions();
         $this->checkResponse($response);
 
     }
 
 
-    public function checkResponse(SurveyDynamic $response) {
-        $questions = $this->questions;
+    public function afterFindSurvey() {
+        $this->loadSurvey();
+    }
+
+    public function enabled(): bool
+    {
+        return boolval($this->get("enabled", 'Survey', $this->survey->primaryKey));
+    }
+
+
+    public function actionIndex($sid)
+    {
+        $this->beforeAction($sid);
+        Yii::log(json_encode($this->targetQuestion->attributes), 'trace', __METHOD__);
+        $this->sendApiRequest = false;
+        /** @var LSYii_Application $app */
+        $app = Yii::app();
+        $request = $app->request;
+
+        if ($request->isPostRequest) {
+            $this->sendApiRequest = boolval($request->getPost('sendApiRequest'));
+            Yii::log('sendApiRequest: ' . strval($this->sendApiRequest), 'trace', __METHOD__);
+            $this->checkWholeSurvey();
+        }
+
+        return $this->renderPartial('index',
+            [
+                'survey' => $this->survey,
+                'targetQuestion' => $this->targetQuestion,
+                'appNameQuestion' => $this->appNameQuestion,
+                'targetQuestionName' => $this->settingValue('targetQuestion'),
+                'responseIdFieldName' => $this->responseIdFieldName(),
+                'externalAppNameQuestionName' => $this->externalAppNameQuestionName()
+            ],
+            true
+        );
+    }
+
+
+
+    /**
+     * This event is fired by the administration panel to gather extra settings
+     * available for a survey.
+     * The plugin should return setting metadata.
+     */
+    public function beforeSurveySettings()
+    {
+        $this->loadSurveySettings();
+    }
+
+    public function newSurveySettings()
+    {
+        $event = $this->event;
+
+        foreach ($event->get('settings') as $name => $value) {
+            $this->set($name, $value, 'Survey', $event->get('survey'));
+        }
+    }
+
+    public function getSurvey() : Survey
+    {
+        return $this->survey;
+    }
+
+
+    private function checkResponse(SurveyDynamic $response) {
         $this->totalSubQuestions = 0;
+        $this->totalQuality = 1.0;
+
+        $this->checkStraightLiningOnResponse($response);
+
+        Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
+        Yii::log("totalQuality " .round($this->totalQuality * 100, 0). "%" , 'info', __METHOD__);
+        $this->saveResult($this->totalQuality, $response);
+        if($this->isTrashResult($this->totalQuality) && $this->unSubmitEnabled()) {
+            $this->unSubmitResponse($response);
+        }
+
+        if($this->sendApiRequest) {
+            $this->sendResultToApp($response, $this->totalSubQuestions, $this->totalQuality);
+        }
+
+    }
+
+    private function checkStraightLiningOnResponse(SurveyDynamic $response)
+    {
+        $questions = $this->straightLiningQuestions;
         if(count($questions) == 0) {
-            Yii::log('no questions found' , 'trace', __METHOD__);
+            Yii::log('no straightLiningQuestions found' , 'trace', __METHOD__);
             return;
         }
-        $totalQuality = 1.0;
+
         $questionQualities = [];
         Yii::log("found ".count($questions)." questions for quality check " , 'info', __METHOD__);
         foreach ($questions as $question) {
@@ -88,31 +172,19 @@ class ResponseQualityChecker extends PluginBase
             }
         }
         if($this->totalSubQuestions > 0) {
-            $totalQuality = 0.0;
+            $this->totalQuality = 0.0;
             foreach ($questionQualities as $questionQuality) {
                 $itemWeight = $questionQuality->getItems() / $this->totalSubQuestions;
                 $itemQuality = $questionQuality->getQuality() * $itemWeight;
-                $totalQuality += $itemQuality;
+                $this->totalQuality += $itemQuality;
             }
-        }
-
-        Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
-        Yii::log("totalQuality " .round($totalQuality * 100, 0). "%" , 'info', __METHOD__);
-        $this->saveResult($totalQuality, $response);
-        if($this->isTrashResult($totalQuality) && $this->unSubmitEnabled()) {
-            $this->unSubmitResponse($response);
-        }
-
-        if($this->sendApiRequest) {
-            $this->sendResultToApp($response, $this->totalSubQuestions, $totalQuality);
         }
 
     }
 
 
 
-
-    public function checkStraightLining(Question $question, SurveyDynamic $response) : QualityResult
+    private function checkStraightLiningOnQuestion(Question $question, SurveyDynamic $response) : QualityResult
     {
         Yii::log('checkStraightLining:sid:'. $this->survey->primaryKey . ":response:" . $response->id .":" , 'trace', __METHOD__);
         $subQuestions = $question->subquestions;
@@ -158,29 +230,7 @@ class ResponseQualityChecker extends PluginBase
     }
 
 
-
-    public function targetQuestion() : ?Question
-    {
-        if($this->targetQuestion !== null) {
-            return $this->targetQuestion;
-        }
-        $targetQuestionName = $this->settingValue('targetQuestion');
-        Yii::log('looking for target question ' . $targetQuestionName, 'trace', __METHOD__);
-        $targetQuestion = $this->findQuestionByName($targetQuestionName);
-
-        if($targetQuestion === null) {
-            $this->targetQuestion = null;
-            Yii::log("target question $targetQuestionName not found"  , 'trace', __METHOD__);
-            return null;
-        }
-
-        Yii::log('found target question ' . $targetQuestionName, 'trace', __METHOD__);
-        $this->targetQuestion = $targetQuestion;
-        return $targetQuestion;
-
-    }
-
-    public function appNameQuestion() : ?Question
+    private function appNameQuestion() : ?Question
     {
         if($this->appNameQuestion !== null) {
             return $this->appNameQuestion;
@@ -200,71 +250,27 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
-    public function afterFindSurvey() {
-        $this->loadSurvey();
-    }
 
-    public function enabled(): bool
+    private function targetQuestion() : ?Question
     {
-        return boolval($this->get("enabled", 'Survey', $this->survey->primaryKey));
-    }
+        if($this->targetQuestion !== null) {
+            return $this->targetQuestion;
+        }
+        $targetQuestionName = $this->settingValue('targetQuestion');
+        Yii::log('looking for target question ' . $targetQuestionName, 'trace', __METHOD__);
+        $targetQuestion = $this->findQuestionByName($targetQuestionName);
 
-
-    public function actionIndex($sid)
-    {
-        $this->beforeAction($sid);
-        Yii::log(json_encode($this->targetQuestion->attributes), 'trace', __METHOD__);
-        $this->sendApiRequest = false;
-        /** @var LSYii_Application $app */
-        $app = Yii::app();
-        $request = $app->request;
-
-        if ($request->isPostRequest) {
-            $this->sendApiRequest = boolval($request->getPost('sendApiRequest'));
-            Yii::log('sendApiRequest: ' . strval($this->sendApiRequest), 'trace', __METHOD__);
-            $this->checkWholeSurvey();
+        if($targetQuestion === null) {
+            $this->targetQuestion = null;
+            Yii::log("target question $targetQuestionName not found"  , 'trace', __METHOD__);
+            return null;
         }
 
-        return $this->renderPartial('index',
-            [
-                'survey' => $this->survey,
-                'targetQuestion' => $this->targetQuestion,
-                'appNameQuestion' => $this->appNameQuestion,
-                'targetQuestionName' => $this->settingValue('targetQuestion'),
-                'responseIdFieldName' => $this->responseIdFieldName(),
-                'externalAppNameQuestionName' => $this->externalAppNameQuestionName()
-            ],
-            true
-        );
+        Yii::log('found target question ' . $targetQuestionName, 'trace', __METHOD__);
+        $this->targetQuestion = $targetQuestion;
+        return $targetQuestion;
+
     }
-
-
-
-    /**
-     * This event is fired by the administration panel to gather extra settings
-     * available for a survey.
-     * The plugin should return setting meta data.
-     */
-    public function beforeSurveySettings()
-    {
-        $this->loadSurveySettings();
-    }
-
-    public function newSurveySettings()
-    {
-        $event = $this->event;
-
-        foreach ($event->get('settings') as $name => $value) {
-            $this->set($name, $value, 'Survey', $event->get('survey'));
-        }
-    }
-
-    public function getSurvey() : Survey
-    {
-        return $this->survey;
-    }
-
-
     private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
     {
         $externalAppNameQuestionName = $this->externalAppNameQuestionName();
@@ -462,7 +468,7 @@ class ResponseQualityChecker extends PluginBase
             Yii::log('plugin disabled' , 'trace', __METHOD__);
             return;
         }
-        $this->questions = $this->checkableQuestions();
+        $this->straightLiningQuestions = $this->straightLiningQuestions();
 
         $model = SurveyDynamic::model($this->survey->primaryKey);
         $criteria = new CDbCriteria();
@@ -475,10 +481,12 @@ class ResponseQualityChecker extends PluginBase
         foreach ($models as $model) {
             $this->checkResponse($model);
         }
-
     }
 
-    private function checkableQuestions()
+    /**
+     * @return Question[]
+     */
+    private function straightLiningQuestions() : array
     {
         $criteria = $this->getQuestionOrderCriteria();
 
@@ -588,7 +596,7 @@ class ResponseQualityChecker extends PluginBase
 
     private function checkQuestionQuality(Question $question, SurveyDynamic $response) : QualityResult
     {
-        return $this->checkStraightLining($question, $response);
+        return $this->checkStraightLiningOnQuestion($question, $response);
     }
 
     private function unSubmitEnabled(): bool

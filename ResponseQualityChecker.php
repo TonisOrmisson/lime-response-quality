@@ -140,6 +140,7 @@ class ResponseQualityChecker extends PluginBase
         $this->totalQuality = 1.0;
 
         $this->checkStraightLiningOnResponse($response);
+        $this->checkDontKnowsOnResponse($response);
 
         Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
         Yii::log("totalQuality " .round($this->totalQuality * 100, 0). "%" , 'info', __METHOD__);
@@ -154,18 +155,37 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
+    private function checkDontKnowsOnResponse(SurveyDynamic $response)
+    {
+        $answers = $this->dontKnowAnswers();
+        if(count($answers) == 0) {
+            Yii::log('noStraightLiningAnswersFound' , 'trace', __METHOD__);
+            return;
+        }
+        foreach ($answers as $answer) {
+
+        }
+
+    }
+
+    private function checkDontKnowsOnAnswer(Answer $answer, SurveyDynamic $response) : QualityResult
+    {
+        $question = $answer->questions;
+
+    }
+
     private function checkStraightLiningOnResponse(SurveyDynamic $response)
     {
         $questions = $this->straightLiningQuestions;
         if(count($questions) == 0) {
-            Yii::log('no straightLiningQuestions found' , 'trace', __METHOD__);
+            Yii::log('noStraightLiningQuestionsFound' , 'trace', __METHOD__);
             return;
         }
 
         $questionQualities = [];
         Yii::log("found ".count($questions)." questions for quality check " , 'info', __METHOD__);
         foreach ($questions as $question) {
-            $questionQuality = $this->checkQuestionQuality($question, $response);
+            $questionQuality = $this->checkStraightLiningOnQuestion($question, $response);
             if($questionQuality->getItems() > 0) {
                 $questionQualities[] = $questionQuality;
                 Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->title , 'trace', __METHOD__);
@@ -447,6 +467,7 @@ class ResponseQualityChecker extends PluginBase
         $event = $this->event;
         $globalSettings = $this->getPluginSettings(true);
 
+
         $surveySettings = [];
         foreach ($globalSettings as $key => $setting) {
             $currentSurveyValue = $this->get($key, 'Survey', $event->get('survey'));
@@ -484,9 +505,62 @@ class ResponseQualityChecker extends PluginBase
     }
 
     /**
+     * @return Answer[]
+     */
+    private function dontKnowAnswers() : array
+    {
+        $locator = 'class="eoo"';
+        $questions =
+
+        $criteria = new CDbCriteria();
+        $criteria->select = Yii::app()->db->quoteColumnName('t.*');
+        $criteria->with = [
+            'question'
+        ];
+
+        $criteria->addCondition('question.sid='.$this->survey->primaryKey);
+
+        if($this->isV4plusVersion()) {
+            $criteria->with[] = 'answerl10ns';
+            $criteria->addColumnCondition([
+                'answerl10ns.language' => $this->survey->language,
+            ]);
+            $criteria->addSearchCondition('answerl10ns.answer', $locator );
+        }else {
+            $criteria->addColumnCondition([
+                'question.language' => $this->survey->language,
+            ]);
+            $criteria->addSearchCondition('t.answer', $locator);
+        }
+        Yii::log("test2", "info", __METHOD__);
+
+        $answers = (new Answer())->findAll($criteria);
+        return $answers;
+    }
+
+    /**
      * @return Question[]
      */
     private function straightLiningQuestions() : array
+    {
+        $arrayQuestionTypes = [
+            '1', // array dual scale
+            'A', // array (5 point choice)
+            'B', // array (10 point choice)
+            'C', // array (yes/no/Uncertain)
+            'E', // array (increase/same/decrease)
+            'F', // array (Flexible Labels)
+            'H', // array (Flexible Labels) by column
+        ];
+        return $this->questionsByTypes($arrayQuestionTypes);
+    }
+
+
+
+    /**
+     * @return Question[]
+     */
+    private function questionsByTypes(array $questionTypes) : array
     {
         $criteria = $this->getQuestionOrderCriteria();
 
@@ -499,22 +573,12 @@ class ResponseQualityChecker extends PluginBase
                 't.language' => $this->survey->language,
             ]);
         }
-        $arrayQuestionTypes = [
-            '1', // array dual scale
-            'A', // array (5 point choice)
-            'B', // array (10 point choice)
-            'C', // array (yes/no/Uncertain)
-            'E', // array (increase/same/decrease)
-            'F', // array (Flexible Labels)
-            'H', // array (Flexible Labels) by column
-        ];
-        $criteria->addInCondition('t.type', $arrayQuestionTypes);
-
+        $criteria->addInCondition('t.type', $questionTypes);
         /** @var Question[] $questions */
         $questions = Question::model()->findAll($criteria);
         return $questions;
-    }
 
+    }
 
     private function findQuestionByName(string $name) : ?Question
     {
@@ -594,10 +658,6 @@ class ResponseQualityChecker extends PluginBase
 
     }
 
-    private function checkQuestionQuality(Question $question, SurveyDynamic $response) : QualityResult
-    {
-        return $this->checkStraightLiningOnQuestion($question, $response);
-    }
 
     private function unSubmitEnabled(): bool
     {

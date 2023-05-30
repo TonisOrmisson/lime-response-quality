@@ -15,24 +15,21 @@ class ExternalPostService
     private int $assessedItemsCount = 0;
     private float $qualityScore;
     private bool $sendApiRequest = true;
+    private ResponseQualityChecker $checker;
 
     public function __construct(SurveyDynamic $response,
             ApiConfig $config,
-            Survey $survey,
-            int $numberOfAssessedItems,
-            float $qualityScore,
-            bool $sendApiRequest = true,
-            ?string $responseIdFieldName = 'token'
-    )
+            ResponseQualityChecker $responseQualityChecker)
     {
+        $this->checker = $responseQualityChecker;
         $this->response = $response;
-        $this->survey =  $survey;
-        $this->assessedItemsCount = $numberOfAssessedItems;
-        $this->qualityScore = $qualityScore;
+        $this->survey =  $responseQualityChecker->getSurvey();
+        $this->assessedItemsCount = $responseQualityChecker->getTotalSubQuestions();
+        $this->qualityScore = $responseQualityChecker->getTotalQuality();
         $this->url = $config->url;
         $this->authenticationBearerToken = $config->authBearerToken;
-        $this->responseIdFieldName = $responseIdFieldName;
-        $this->sendApiRequest = $sendApiRequest;
+        $this->responseIdFieldName = $responseQualityChecker->responseIdQuestionFieldName();
+        $this->sendApiRequest = $responseQualityChecker->isSendApiRequest();
     }
 
     public function run()
@@ -45,7 +42,19 @@ class ExternalPostService
             'id' => $this->response->{$this->responseIdFieldName},
             'survey' => $this->survey->primaryKey,
             'assessedItemsCount' => $this->assessedItemsCount,
-            'qualityScore' => $this->qualityScore
+            'qualityScore' => $this->qualityScore,
+            'straightLining' => [
+                'items' => $this->checker->getStraightLiningItemsCount(),
+                'quality' => $this->checker->getStraightLineQuality(),
+            ],
+            'dontKnows' => [
+                'items' => $this->checker->getDontKnowItemsCount(),
+                'quality' => $this->checker->getDontKnowQuality(),
+            ],
+            'timing' => [
+                'items' => null,
+                'quality' => $this->checker->getTimingQuality(),
+            ],
         ];
         $this->makeRequest($data);
     }

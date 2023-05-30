@@ -17,6 +17,8 @@ class ResponseQualityChecker extends PluginBase
     /** @var Survey $survey */
     private Survey $survey;
     private int $totalSubQuestions = 0;
+    private int $straightLiningItemsCount = 0;
+    private int $dontKnowItemsCount = 0;
     private array $straightLiningQuestions = [];
     /** @var null|Question|bool */
     private $targetQuestion = null;
@@ -25,6 +27,13 @@ class ResponseQualityChecker extends PluginBase
     protected $settings = [];
     private bool $sendApiRequest = true;
     private float $totalQuality = 1.0;
+    private float $straightLineQuality = 1.0;
+    private float $dontKnowQuality = 1.0;
+    private float $timingQuality = 1.0;
+    public float $minSecondsAllowedOnItem = 1.0;
+
+    /** @var float $pageBaseMinSeconds absolute minimum time needed to be on one page */
+    public float $pageBaseMinSeconds = 1.0;
 
     public function __construct(\LimeSurvey\PluginManager\PluginManager $manager, $id)
     {
@@ -64,7 +73,6 @@ class ResponseQualityChecker extends PluginBase
             Yii::log('plugin disabled' , 'trace', __METHOD__);
             return;
         }
-        $this->straightLiningQuestions = $this->straightLiningQuestions();
         $this->checkResponse($response);
 
     }
@@ -118,6 +126,12 @@ class ResponseQualityChecker extends PluginBase
     public function beforeSurveySettings()
     {
         $this->loadSurveySettings();
+        $dynamic = SurveyDynamic::model($this->survey->primaryKey);
+        $token = "994a95c46c3333c2af4de4a991740cf5";
+        $response = $dynamic->findByAttributes(['token' => $token]);
+        //Yii::log("gotResponse:".json_encode($response->attributes), 'trace', __METHOD__);
+        $this->checkResponse($response);
+
     }
 
     public function newSurveySettings()
@@ -136,11 +150,12 @@ class ResponseQualityChecker extends PluginBase
 
 
     private function checkResponse(SurveyDynamic $response) {
-        $this->totalSubQuestions = 0;
-        $this->totalQuality = 1.0;
+        $this->reset();
+        $this->straightLiningQuestions = $this->straightLiningQuestions();
 
         $this->checkStraightLiningOnResponse($response);
         $this->checkDontKnowsOnResponse($response);
+        $this->checkTimingsOnResponse($response);
 
         Yii::log("total SubQuestions " . $this->totalSubQuestions , 'info', __METHOD__);
         Yii::log("totalQuality " .round($this->totalQuality * 100, 0). "%" , 'info', __METHOD__);
@@ -150,8 +165,74 @@ class ResponseQualityChecker extends PluginBase
         }
 
         if($this->sendApiRequest) {
-            $this->sendResultToApp($response, $this->totalSubQuestions, $this->totalQuality);
+            $this->sendResultToApp($response);
         }
+
+    }
+
+    private function reset()
+    {
+        $this->totalSubQuestions = 0;
+        $this->straightLiningItemsCount = 0;
+        $this->dontKnowItemsCount = 0;
+
+        $this->totalQuality = 1.0;
+        $this->straightLineQuality = 1.0;
+        $this->dontKnowQuality = 1.0;
+        $this->timingQuality = 1.0;
+
+    }
+
+    private function checkTimingsOnResponse(SurveyDynamic $response)
+    {
+
+        $groups = QuestionGroup::model()->findAllByAttributes(['sid'  => $this->survey->primaryKey]);
+        $timings = SurveyTimingDynamic::model($this->survey->primaryKey)
+            ->findByPk($response->primaryKey);
+        $data = [];
+        if(empty($timings)) {
+            Yii::log("noTimes", 'info', __METHOD__);
+            return;
+        }
+        Yii::log("Times:".json_encode($timings->attributes), 'trace', __METHOD__);
+        Yii::log("GroupsCount:".count($groups), 'trace', __METHOD__);
+        $okGroupsCount = 0;
+        $relevantGroupsCount = 0;
+        foreach ($groups as $group) {
+            $sg = $this->survey->primaryKey."X".$group->primaryKey;
+            $timeColName = $sg."time";
+            if(!isset($timings[$timeColName]) or
+                (isset($timings[$timeColName]) and $timings[$timeColName] == null)
+            ) {
+                Yii::log("groupNoTimings:".$group->gid, 'info', __METHOD__);
+                continue;
+            }
+
+            $relevantGroupsCount++;
+            $groupTime = floatval($timings[$timeColName]);
+            Yii::log("$timeColName:". $groupTime, 'trace', __METHOD__);
+
+            $relevantItemsCount = 0;
+            $questionsOnPage = $group->getAllQuestions();
+            $relevantItemsCount += count($questionsOnPage);
+            $minAllowedSeconds = $this->pageBaseMinSeconds + ($relevantItemsCount * $this->minSecondsAllowedOnItem);
+            if($groupTime >= $minAllowedSeconds) {
+                $okGroupsCount++;
+            } else {
+                Yii::log("timingQualityNotOkFor:". $group->gid
+                    . " allowed: ". round($minAllowedSeconds, 3)
+                    . " actual: ". round($groupTime, 3), 'info', __METHOD__);
+            }
+
+            $data[] = [
+                'gid' => $group->primaryKey,
+                'items' => $relevantItemsCount
+            ];
+        }
+        $this->timingQuality = $okGroupsCount / $relevantGroupsCount;
+        Yii::log("timingQuality:". json_encode($data), 'info', __METHOD__);
+        Yii::log("timingQuality:". $this->timingQuality, 'info', __METHOD__);
+        $this->totalQuality = $this->totalQuality * $this->timingQuality;
 
     }
 
@@ -159,31 +240,52 @@ class ResponseQualityChecker extends PluginBase
     {
         $answers = $this->dontKnowAnswers();
         if(count($answers) == 0) {
-            Yii::log('noStraightLiningAnswersFound' , 'trace', __METHOD__);
+            Yii::log('noDontKnowAnswersFound' , 'trace', __METHOD__);
             return;
         }
+        $totalNoAnswerQuestionsIds = [];
+        $countNoAnswers = 0;
         foreach ($answers as $answer) {
+            $question = $answer->question;
+            $totalNoAnswerQuestionsIds[] = $question->qid;
+            $totalNoAnswerQuestionsIds = array_unique($totalNoAnswerQuestionsIds);
+            $field = $question->sid . 'X' . $question->gid . 'X' . $question->qid;
+            if(!isset($response[$field])) {
+                continue;
+            }
+            $value = $response[$field];
+            if($value == $answer->code) {
+                $countNoAnswers++;
+                Yii::log("$field: ". $response[$field] , 'trace', __METHOD__);
+            }
 
         }
 
-    }
+        $qualityResult = (new QualityResult());
+        $this->dontKnowItemsCount = count($totalNoAnswerQuestionsIds);
 
-    private function checkDontKnowsOnAnswer(Answer $answer, SurveyDynamic $response) : QualityResult
-    {
-        $question = $answer->questions;
+        $noAnswerRate = $countNoAnswers / $this->dontKnowItemsCount;
+        $noAnswerQuality= 1-$noAnswerRate;
+        $qualityResult->setQuality($noAnswerQuality);
+        $qualityResult->setItems(count($totalNoAnswerQuestionsIds));
+        $this->straightLineQuality = $qualityResult->getQuality();
 
+        $this->totalQuality = $this->totalQuality *$this->straightLineQuality;
+
+        Yii::log(json_encode($response->attributes) , 'trace', __METHOD__);
+        Yii::log("noAnswerQuality:". $qualityResult->getQuality(), 'info', __METHOD__);
     }
 
     private function checkStraightLiningOnResponse(SurveyDynamic $response)
     {
         $questions = $this->straightLiningQuestions;
         if(count($questions) == 0) {
-            Yii::log('noStraightLiningQuestionsFound' , 'trace', __METHOD__);
+            Yii::log('noStraightLiningQuestionsFound' , 'info', __METHOD__);
             return;
         }
 
         $questionQualities = [];
-        Yii::log("found ".count($questions)." questions for quality check " , 'info', __METHOD__);
+        Yii::log("found ".count($questions)." questions for straightLining quality check " , 'info', __METHOD__);
         foreach ($questions as $question) {
             $questionQuality = $this->checkStraightLiningOnQuestion($question, $response);
             if($questionQuality->getItems() > 0) {
@@ -191,14 +293,18 @@ class ResponseQualityChecker extends PluginBase
                 Yii::log($question->title . " [".round($questionQuality->getQuality() *100,1)."%] ". $question->title , 'trace', __METHOD__);
             }
         }
-        if($this->totalSubQuestions > 0) {
-            $this->totalQuality = 0.0;
+        if($this->straightLiningItemsCount > 0) {
+            $this->straightLineQuality = 0.0;
             foreach ($questionQualities as $questionQuality) {
-                $itemWeight = $questionQuality->getItems() / $this->totalSubQuestions;
+                $itemWeight = $questionQuality->getItems() / $this->straightLiningItemsCount;
                 $itemQuality = $questionQuality->getQuality() * $itemWeight;
-                $this->totalQuality += $itemQuality;
+                $this->straightLineQuality += $itemQuality;
+                Yii::log("straightLiningQuality:". $this->straightLineQuality, 'info', __METHOD__);
             }
         }
+        $this->straightLiningItemsCount  = count($questions);
+        $this->totalQuality = $this->totalQuality *$this->straightLineQuality;
+        Yii::log("straightLiningQuality:". $this->straightLineQuality, 'info', __METHOD__);
 
     }
 
@@ -222,7 +328,7 @@ class ResponseQualityChecker extends PluginBase
             if($answer == '' or $answer == null) {
                 continue;
             }
-            $this->totalSubQuestions++;
+            $this->straightLiningItemsCount++;
             $result->addItems(1);
             $answers[] = $answer;
             //Yii::log("checking $sgqa:". $answer  , 'info', __METHOD__);
@@ -291,8 +397,9 @@ class ResponseQualityChecker extends PluginBase
         return $targetQuestion;
 
     }
-    private function sendResultToApp(SurveyDynamic $response, int $subQuestionsCount, float $qualityScore) : bool
+    private function sendResultToApp(SurveyDynamic $response) : bool
     {
+        Yii::log("sendResultToApp:" . $this->survey->primaryKey, 'info', __METHOD__);
         $externalAppNameQuestionName = $this->externalAppNameQuestionName();
         if($externalAppNameQuestionName === null) {
             return false;
@@ -321,11 +428,7 @@ class ResponseQualityChecker extends PluginBase
         $postService = new ExternalPostService(
             $response,
             $apiConfig,
-            $this->survey,
-            $subQuestionsCount,
-            $qualityScore,
-            $this->sendApiRequest,
-            $this->responseIdQuestionFieldName()
+            $this
         );
         $postService->run();
         return true;
@@ -532,7 +635,6 @@ class ResponseQualityChecker extends PluginBase
             ]);
             $criteria->addSearchCondition('t.answer', $locator);
         }
-        Yii::log("test2", "info", __METHOD__);
 
         $answers = (new Answer())->findAll($criteria);
         return $answers;
@@ -562,6 +664,7 @@ class ResponseQualityChecker extends PluginBase
      */
     private function questionsByTypes(array $questionTypes) : array
     {
+        Yii::log("questionsByTypes", "info", __METHOD__);
         $criteria = $this->getQuestionOrderCriteria();
 
         $criteria->addColumnCondition([
@@ -576,6 +679,7 @@ class ResponseQualityChecker extends PluginBase
         $criteria->addInCondition('t.type', $questionTypes);
         /** @var Question[] $questions */
         $questions = Question::model()->findAll($criteria);
+
         return $questions;
 
     }
@@ -678,7 +782,7 @@ class ResponseQualityChecker extends PluginBase
         return trim(strval($this->settingValue('responseIdFieldName')));
     }
 
-    private function  responseIdQuestionFieldName():?string
+    public function  responseIdQuestionFieldName():?string
     {
         $questionName = $this->responseIdFieldName();
         if($questionName === 'token') {
@@ -755,6 +859,160 @@ class ResponseQualityChecker extends PluginBase
         return $value;
 
     }
+
+    /**
+     * @return LSYii_Application
+     */
+    public function getApp(): LSYii_Application
+    {
+        return $this->app;
+    }
+
+    /**
+     * @return string
+     */
+    public function getStorage(): string
+    {
+        return $this->storage;
+    }
+
+    /**
+     * @return string
+     */
+    public static function getDescription(): string
+    {
+        return self::$description;
+    }
+
+    /**
+     * @return string
+     */
+    public static function getName(): string
+    {
+        return self::$name;
+    }
+
+    /**
+     * @return int
+     */
+    public function getTotalSubQuestions(): int
+    {
+        return $this->totalSubQuestions;
+    }
+
+    /**
+     * @return array
+     */
+    public function getStraightLiningQuestions(): array
+    {
+        return $this->straightLiningQuestions;
+    }
+
+    /**
+     * @return bool|Question|null
+     */
+    public function getTargetQuestion()
+    {
+        return $this->targetQuestion;
+    }
+
+    /**
+     * @return bool|Question|null
+     */
+    public function getAppNameQuestion()
+    {
+        return $this->appNameQuestion;
+    }
+
+    /**
+     * @return array
+     */
+    public function getSettings(): array
+    {
+        return $this->settings;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isSendApiRequest(): bool
+    {
+        return $this->sendApiRequest;
+    }
+
+    /**
+     * @return float
+     */
+    public function getTotalQuality(): float
+    {
+        return $this->totalQuality;
+    }
+
+    /**
+     * @return float
+     */
+    public function getStraightLineQuality(): float
+    {
+        return $this->straightLineQuality;
+    }
+
+    /**
+     * @return float
+     */
+    public function getDontKnowQuality(): float
+    {
+        return $this->dontKnowQuality;
+    }
+
+    /**
+     * @return int
+     */
+    public function getStraightLiningItemsCount(): int
+    {
+        return $this->straightLiningItemsCount;
+    }
+
+    /**
+     * @param int $straightLiningItemsCount
+     */
+    public function setStraightLiningItemsCount(int $straightLiningItemsCount): void
+    {
+        $this->straightLiningItemsCount = $straightLiningItemsCount;
+    }
+
+    /**
+     * @return int
+     */
+    public function getDontKnowItemsCount(): int
+    {
+        return $this->dontKnowItemsCount;
+    }
+
+    /**
+     * @param int $dontKnowItemsCount
+     */
+    public function setDontKnowItemsCount(int $dontKnowItemsCount): void
+    {
+        $this->dontKnowItemsCount = $dontKnowItemsCount;
+    }
+
+    /**
+     * @return float
+     */
+    public function getTimingQuality(): float
+    {
+        return $this->timingQuality;
+    }
+
+    /**
+     * @param float $timingQuality
+     */
+    public function setTimingQuality(float $timingQuality): void
+    {
+        $this->timingQuality = $timingQuality;
+    }
+
+
 
 
 }

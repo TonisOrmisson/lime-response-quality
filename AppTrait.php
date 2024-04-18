@@ -6,4 +6,9 @@ trait AppTrait
     {
         return intval(\Yii::app()->getConfig("versionnumber")) > 3;
     }
+    private function logCategory() {
+        return "andmemasin\\ResponseQualityChecker";
+    }
+
+
 }

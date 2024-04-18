@@ -126,11 +126,6 @@ class ResponseQualityChecker extends PluginBase
     public function beforeSurveySettings()
     {
         $this->loadSurveySettings();
-        $dynamic = SurveyDynamic::model($this->survey->primaryKey);
-        $token = "994a95c46c3333c2af4de4a991740cf5";
-        $response = $dynamic->findByAttributes(['token' => $token]);
-        //Yii::log("gotResponse:".json_encode($response->attributes), 'trace', __METHOD__);
-        $this->checkResponse($response);
 
     }
 
@@ -573,7 +568,7 @@ class ResponseQualityChecker extends PluginBase
 
         $surveySettings = [];
         foreach ($globalSettings as $key => $setting) {
-            $currentSurveyValue = $this->get($key, 'Survey', $event->get('survey'));
+            $currentSurveyValue = $this->get($key, 'Survey', $this->survey->primaryKey);
             $surveySettings[$key] = $setting;
             if(!empty($currentSurveyValue)) {
                 $surveySettings[$key]['current'] = $currentSurveyValue;
@@ -751,9 +746,8 @@ class ResponseQualityChecker extends PluginBase
             ->where('sid=:sid')
             ->bindParam(':sid', $surveyId, PDO::PARAM_STR);
         $surveyArray = $query->queryRow();
-
         if (empty($surveyArray)) {
-            Yii::log("Got empty survey", "trace", __METHOD__);
+            Yii::log("Got empty surveys", "info", __METHOD__);
             return;
         }
         //Yii::log("Creating a survey from array", "info", __METHOD__);

@@ -58,6 +58,11 @@ class ResponseQualityChecker extends PluginBase
 
     public function afterSurveyComplete()
     {
+        if(!$this->survey->isActive) {
+            Yii::log('afterSurveyComplete on survey not active, skipping', 'trace', $this->logCategory());
+            return;
+        }
+
         $responseId = $this->event->get('responseId');
         Yii::log('afterSurveyComplete on response:' . $responseId, 'trace', $this->logCategory());
 
